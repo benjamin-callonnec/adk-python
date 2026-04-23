@@ -103,7 +103,17 @@ _JSON_DECODER = json.JSONDecoder()
 _MEDIA_URL_CONTENT_TYPE_BY_MAJOR_MIME_TYPE = {
     "image": "image_url",
     "video": "video_url",
-    "audio": "audio_url",
+}
+
+# LiteLLM input_audio only accepts "mp3" and "wav" as format values.
+# Maps audio MIME subtypes (including common aliases) to the canonical format.
+_AUDIO_MIME_SUBTYPE_TO_FORMAT: dict[str, str] = {
+    "mpeg": "mp3",
+    "mp3": "mp3",
+    "wav": "wav",
+    "x-wav": "wav",
+    "wave": "wav",
+    "vnd.wave": "wav",
 }
 
 # Mapping of LiteLLM finish_reason strings to FinishReason enum values
@@ -1047,6 +1057,21 @@ async def _get_content(
         content_objects.append({
             "type": url_content_type,
             url_content_type: {"url": data_uri},
+        })
+      elif mime_type.startswith("audio/"):
+        audio_subtype = mime_type.split("/", 1)[1]
+        audio_format = _AUDIO_MIME_SUBTYPE_TO_FORMAT.get(audio_subtype)
+        if audio_format is None:
+          raise ValueError(
+              f"Unsupported audio MIME type '{part.inline_data.mime_type}'."
+              " LiteLLM input_audio only supports mp3 and wav."
+          )
+        content_objects.append({
+            "type": "input_audio",
+            "input_audio": {
+                "data": base64_string,
+                "format": audio_format,
+            },
         })
       elif mime_type in _SUPPORTED_FILE_CONTENT_MIME_TYPES:
         # OpenAI/Azure require file_id from uploaded file, not inline data
